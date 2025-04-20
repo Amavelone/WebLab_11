@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <link rel="stylesheet" href="styles.css">
+
+</head>
+
+<body>
+    <div id="app">
+        <h1>Менеджер задач</h1>
+
+        <task-form @add-task="addTask"></task-form>
+        <task-filters :filter="filter" @update-filter="filter = $event"></task-filters>
+        <task-list :tasks="filteredTasks" @delete-task="deleteTask" @toggle-done="toggleDone"></task-list>
+
+        <div>
+            <button @click="exportTasks">Экспорт задач</button>
+            <input type="file" @change="importTasks" accept=".json" style="display: none" ref="fileInput">
+            <button @click="$refs.fileInput.click()">Импорт задач</button>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script>
+        const { createApp } = Vue;
+
+        // Компонент формы добавления задачи
+        const TaskForm = {
+            template: `
+        <form @submit.prevent="$emit('add-task', newTask)">
+          <input 
+            type="text" 
+            v-model="newTask.text" 
+            placeholder="Введите задачу" 
+            required
+          >
+          <input 
+            type="date" 
+            v-model="newTask.deadline" 
+            required
+          >
+          <button type="submit">Добавить</button>
+        </form>
+      `,
+            data() {
+                return {
+                    newTask: {
+                        text: '',
+                        deadline: ''
+                    }
+                };
+            }
+        };
+
+        // Компонент фильтров
+        const TaskFilters = {
+            template: `
+        <div class="filters">
+          <button 
+            class="filter-btn" 
+            :class="{ active: filter === 'all' }"
+            @click="$emit('update-filter', 'all')"
+          >
+            Все
+          </button>
+          <button 
+            class="filter-btn" 
+            :class="{ active: filter === 'active' }"
+            @click="$emit('update-filter', 'active')"
+          >
+            Активные
+          </button>
+          <button 
+            class="filter-btn" 
+            :class="{ active: filter === 'completed' }"
+            @click="$emit('update-filter', 'completed')"
+          >
+            Выполненные
+          </button>
+        </div>
+      `,
+            props: ['filter']
+        };
+
+        // Компонент списка задач
+        const TaskList = {
+            template: `
+        <ul>
+          <li 
+            v-for="(task, index) in tasks" 
+            :key="index"
+            :class="{ done: task.done, overdue: isOverdue(task) && !task.done }"
+          >
+            <input 
+              type="checkbox" 
+              :checked="task.done"
+              @change="$emit('toggle-done', index)"
+            >
+            <span class="task-text">
+              {{ task.text }} — до {{ formatDate(task.deadline) }}
+              <span v-if="isOverdue(task) && !task.done"> (Просрочено)</span>
+            </span>
+            <button @click="$emit('delete-task', index)">Удалить</button>
+          </li>
+        </ul>
+      `,
+            props: ['tasks'],
+            methods: {
+                isOverdue(task) {
+                    if (!task.deadline) return false;
+                    const today = new Date().toISOString().split('T')[0];
+                    return task.deadline < today && !task.done;
+                },
+                formatDate(date) {
+                    if (!date) return '';
+                    return new Date(date).toLocaleDateString();
+                }
+            }
+        };
+
+        // Основное приложение
+        createApp({
+            components: {
+                TaskForm,
+                TaskFilters,
+                TaskList
+            },
+            data() {
+                return {
+                    tasks: [],
+                    filter: 'all'
+                };
+            },
+            computed: {
+                filteredTasks() {
+                    switch (this.filter) {
+                        case 'active':
+                            return this.tasks.filter(task => !task.done);
+                        case 'completed':
+                            return this.tasks.filter(task => task.done);
+                        default:
+                            return this.tasks;
+                    }
+                }
+            },
+            methods: {
+                addTask(newTask) {
+                    this.tasks.push({
+                        ...newTask,
+                        done: false
+                    });
+                    this.saveTasks();
+                },
+                deleteTask(index) {
+                    this.tasks.splice(index, 1);
+                    this.saveTasks();
+                },
+                toggleDone(index) {
+                    this.tasks[index].done = !this.tasks[index].done;
+                    this.saveTasks();
+                },
+                saveTasks() {
+                    localStorage.setItem('tasks', JSON.stringify(this.tasks));
+                },
+                loadTasks() {
+                    const saved = localStorage.getItem('tasks');
+                    if (saved) this.tasks = JSON.parse(saved);
+                },
+                exportTasks() {
+                    const data = JSON.stringify(this.tasks, null, 2);
+                    const blob = new Blob([data], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'tasks.json';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                },
+                importTasks(e) {
+                    const file = e.target.files[0];
+                    if (!file) return;
+
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        try {
+                            const importedTasks = JSON.parse(event.target.result);
+                            if (Array.isArray(importedTasks)) {
+                                this.tasks = importedTasks;
+                                this.saveTasks();
+                                alert('Задачи успешно импортированы!');
+                            } else {
+                                alert('Некорректный формат файла');
+                            }
+                        } catch (error) {
+                            alert('Ошибка при чтении файла');
+                        }
+                    };
+                    reader.readAsText(file);
+                    e.target.value = '';
+                }
+            },
+            mounted() {
+                this.loadTasks();
+            }
+        }).mount('#app');
+    </script>
+
+    <div class="questions">
+        <h2>Контрольные вопросы</h2>
+
+        <div class="qa">
+            <div class="question">1. Почему важно использовать <code>@submit.prevent</code> в форме Vue.js?</div>
+            <div class="answer">Чтобы предотвратить перезагрузку страницы и обрабатывать отправку средствами Vue.</div>
+        </div>
+
+        <div class="qa">
+            <div class="question">2. В чём преимущества хранения данных в <code>localStorage</code> для одностраничных
+                приложений?</div>
+            <div class="answer">Данные сохраняются между сессиями без бэкенда, просто и быстро.</div>
+        </div>
+
+        <div class="qa">
+            <div class="question">3. Объясните, как работает реактивность при использовании <code>v-model</code> с
+                вложенными объектами.</div>
+            <div class="answer">Vue отслеживает изменения в свойствах объекта и автоматически обновляет DOM.</div>
+        </div>
+
+        <div class="qa">
+            <div class="question">4. Почему при изменении полей задачи (<code>text</code>, <code>deadline</code>) они
+                автоматически обновляются в интерфейсе без ручного вызова функций?</div>
+            <div class="answer">Потому что Vue делает свойства реактивными и связывает их с DOM через шаблон.</div>
+        </div>
+
+        <div class="qa">
+            <div class="question">5. Что делает <code>v-bind:class</code> (или <code>:class</code>) и в чём его
+                преимущество
+                перед обычным <code>class</code>?</div>
+            <div class="answer">Он позволяет динамически изменять классы на основе данных, что даёт гибкость и контроль.
+            </div>
+        </div>
+    </div>
+
+</body>
+
+</html>
